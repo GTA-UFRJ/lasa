@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from collections import Counter
 import concurrent.futures
 from concurrent.futures import ProcessPoolExecutor
+from metaphoneptbr import phonetic
 
 
 
@@ -141,8 +142,11 @@ class EvaluateSimilarity:
             word1, word2 = pair
             if not self.same_substance(word1, word2):
                 key = f"{word1}-{word2}"
-                similarity = self.similarity_levenshtein(word1, word2)
-                batch_results[key] = similarity
+                #Similarity considering only the written word
+                similarityWritten = self.similarity_levenshtein(word1, word2)
+                #Similarity considering the phonetic using methaphone br
+                similarityPhonetic = self.similarity_levenshtein(phonetic(word1),phonetic(word2))
+                batch_results[key] = (float(similarityWritten) + float(similarityPhonetic))/float(2)
         return batch_results
 
     def divide_into_batches(self, pairs, num_batches):
@@ -185,7 +189,7 @@ def main(mode):
     similarity_evaluator.run(8)
 
     #Print top K similairties
-    similarity_evaluator.print_top_k_similarity(100,"top100novoParalelo.txt")
+    similarity_evaluator.print_top_k_similarity(100,"top100fonemas.txt")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Programa opera em um dos tres modos.')
