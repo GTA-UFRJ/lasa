@@ -18,9 +18,26 @@ from metaphoneptbr import phonetic
 #This class reads the excel file with medication and preprocess it
 #The ideia is to generate a list of words and an appropriate dataset
 class GenerateWordList:
-    def __init__(self,chosenMode, path):
+    def __init__(self,chosenMode, path, saltFile='sais.xlsx'):
         self.mode = chosenMode
         self.file_path = path
+        # Load the salts file
+        self.salts_df = pd.read_excel(saltFile, header=None)
+
+        #Normalizing the salt names in the same way as performed in the main table
+        self.salts_df.iloc[:, 0] =  self.salts_df.iloc[:, 0].apply(self.normalize_name)
+
+        # Converting the salts column to a list and preparing the regular expression with unidecode to ignore accents
+        self.words_to_remove =  self.salts_df.iloc[:, 0].tolist()
+
+        self.regex_pattern = r'\b(' + '|'.join(self.words_to_remove) + r')\b'
+
+    # Function to remove the words and ignore accents
+    def remove_words(self,substance):
+        normalized_substance = unidecode(substance)  # Normalize the substance to ignore accents
+        # Using a regular expression to replace the words with an empty string
+        cleaned_substance = re.sub(self.regex_pattern, '', normalized_substance, flags=re.IGNORECASE).strip()
+        return cleaned_substance
 
     # Normalize the names
     def normalize_name(self,name):
@@ -40,6 +57,7 @@ class GenerateWordList:
         #Create empty dataframe
         new_rows_list = []
 
+        #TODO When we print the substance it is normalized with no salts
         #Tambem queremos considerar generico. Assim, por simplicidade, fazemos uma nova linha para cada substancia
         # Criar uma nova linha para cada substância única
         for substance in substances_uniques:
@@ -55,6 +73,13 @@ class GenerateWordList:
         # Normalizing the columns
         self.dfComercial['PRODUTO_NORMALIZADO'] = self.dfComercial['PRODUTO'].apply(self.normalize_name)
         self.dfComercial['SUBSTANCIA_NORMALIZADA'] = self.dfComercial['SUBSTÂNCIA'].apply(self.normalize_name)
+
+        #Remove salts from substance name
+        # Applying the function to remove the words from the SUBSTANCIA_NORMALIZADA column with accent ignoring
+        self.dfComercial['SUBSTANCIA_NORMALIZADA'] = self.dfComercial['SUBSTANCIA_NORMALIZADA'].apply(lambda x: self.remove_words(x))
+
+        #Normalizing again just to make sure (e.g., to remove double spaces)
+        self.dfComercial['SUBSTANCIA_NORMALIZADA'] = self.dfComercial['SUBSTANCIA_NORMALIZADA'].apply(self.normalize_name)
 
         if self.mode == 'comercial':
             print("Comparando apenas comerciais")
@@ -74,11 +99,13 @@ class GenerateWordList:
 
         # Criando um mapa de produto com substancia
         self.product_substance_map = self.df.set_index('PRODUTO_NORMALIZADO')['SUBSTANCIA_NORMALIZADA'].to_dict()
+        self.product_substance_original_map = self.df.set_index('PRODUTO_NORMALIZADO')['SUBSTÂNCIA'].to_dict()
 
 class EvaluateSimilarity:
-    def __init__(self,words, product_substance_map):
+    def __init__(self,words, product_substance_map, product_substance_original_map):
         self.words = words
         self.product_substance_map = product_substance_map
+        self.product_substance_original_map = product_substance_original_map
         self.similarities = {}
 
     def print_similarity(self,pair,similarity,outputFile = None):
@@ -87,11 +114,11 @@ class EvaluateSimilarity:
         if (outputFile == None):
             outputFile = sys.stdout
         print("********",file=outputFile)
-        print("PRODUTO A - Nome: " + str(word1) + " - Substancia: " + str(self.product_substance_map.get(word1,None)),file=outputFile)
-        print("PRODUTO B - Nome: " + str(word2) + " - Substancia: " + str(self.product_substance_map.get(word2,None)),file=outputFile)
+        print("PRODUTO A - Nome: " + str(word1) + " - Substancia: " + str(self.product_substance_original_map.get(word1,None)),file=outputFile)
+        print("PRODUTO B - Nome: " + str(word2) + " - Substancia: " + str(self.product_substance_original_map.get(word2,None)),file=outputFile)
         print("Distancia = " + str(similarity),file=outputFile)
 
-    def print_top_k_similarity(self,k,outputFileName=''):
+    def print_top_k_similarity(self,outputFileName='',k=1000):
 
         sorted_similarities = sorted(self.similarities.items(), key=lambda item: item[1], reverse=False)
 
@@ -185,11 +212,12 @@ def main(mode):
 
     print("Calculando as similaridades")
     #Evaluating similarities
-    similarity_evaluator = EvaluateSimilarity(word_list_generator.words,word_list_generator.product_substance_map)
+    similarity_evaluator = EvaluateSimilarity(word_list_generator.words,word_list_generator.product_substance_map, word_list_generator.product_substance_original_map)
     similarity_evaluator.run(8)
 
     #Print top K similairties
-    similarity_evaluator.print_top_k_similarity(100,"top100fonemas.txt")
+    #TODO modify hardcoded name
+    similarity_evaluator.print_top_k_similarity("top1000fonemas.txt")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Programa opera em um dos tres modos.')
