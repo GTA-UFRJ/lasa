@@ -263,12 +263,17 @@ class EvaluateSimilarity:
                 distance_matrix[j, i] = dist
         return distance_matrix
 
-    def cluster_and_plot_dbscan(self, fileNamePrefix,eps=2, min_samples=2):
+    def cluster_and_plot_dbscan(self, fileNamePrefix,eps=1, min_samples=2):
         distance_matrix = self.calculate_distance_matrix_from_dict()
         db = DBSCAN(eps=eps, min_samples=min_samples, metric="precomputed")
         labels = db.fit_predict(distance_matrix)
 
-        # Aplica MDS para visualização
+        #  Saving the cluster into a file
+        with open(f"{fileNamePrefix}_clusters_results.txt", "w") as f:
+            for word, label in zip(self.words, labels):
+                f.write(f"{word}: Cluster {label}\n")
+
+        # Apply MSD to visualize
         mds = MDS(n_components=2, dissimilarity="precomputed", random_state=42)
         positions = mds.fit_transform(distance_matrix)
 
@@ -284,6 +289,7 @@ class EvaluateSimilarity:
 
         #Saving graph
         plt.savefig(fileNamePrefix+'_cluster.pdf', format='pdf')
+        plt.close()
 
 
     def calculate_similarities_for_batch(self, batch):
