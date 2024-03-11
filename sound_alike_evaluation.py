@@ -13,6 +13,7 @@ import concurrent.futures
 from concurrent.futures import ProcessPoolExecutor
 from metaphoneptbr import phonetic
 from collections import Counter
+from collections import defaultdict
 import matplotlib.pyplot as plt
 import os
 import numpy as np
@@ -108,13 +109,14 @@ class GenerateWordList:
         self.product_substance_original_map = self.df.set_index('PRODUTO_NORMALIZADO')['SUBSTÂNCIA'].to_dict()
 
 class EvaluateSimilarity:
-    def __init__(self,words, product_substance_map, product_substance_original_map):
+    def __init__(self,words, product_substance_map, product_substance_original_map,similarity):
         self.words = words
         self.product_substance_map = product_substance_map
         self.product_substance_original_map = product_substance_original_map
         self.similarities = {}
         self.distances_count = None
         self.sorted_distances = None
+        self.similarity = similarity
 
     def print_similarity(self,pair,similarity,outputFile = None):
         word1 = pair.split("-")[0]
@@ -263,34 +265,48 @@ class EvaluateSimilarity:
                 distance_matrix[j, i] = dist
         return distance_matrix
 
-    def cluster_and_plot_dbscan(self, fileNamePrefix,eps=1, min_samples=2):
+    def cluster_dbscan(self, fileNamePrefix,eps=1, min_samples=2):
         distance_matrix = self.calculate_distance_matrix_from_dict()
         db = DBSCAN(eps=eps, min_samples=min_samples, metric="precomputed")
         labels = db.fit_predict(distance_matrix)
 
+        fileName = f"{fileNamePrefix}_dbscan_allclusters_eps_{str(eps)}_min_samples_{str(min_samples)}.txt"
+
         #  Saving the cluster into a file
-        with open(f"{fileNamePrefix}_clusters_results.txt", "w") as f:
+        with open(fileName, "w") as f:
             for word, label in zip(self.words, labels):
                 f.write(f"{word}: Cluster {label}\n")
+        f.close()
 
-        # Apply MSD to visualize
-        mds = MDS(n_components=2, dissimilarity="precomputed", random_state=42)
-        positions = mds.fit_transform(distance_matrix)
+        with open(fileName, 'r', encoding='utf-8') as file:
+            lines = file.readlines()
+        file.close()
 
-        plt.figure(figsize=(10, 8))
-        plt.scatter(positions[:, 0], positions[:, 1], c=labels, cmap='viridis', s=100)
+        # Reading yhe cluster list
+        clusters_real = defaultdict(list)
 
-        for i, word in enumerate(self.words):
-            plt.text(positions[i, 0], positions[i, 1] + 0.02, word, ha='center')
+        # Filling the dictionary
+        for linha in lines:
+            # Removing blank spaces
+            linha = linha.strip()
+            if linha:
+                palavra, cluster_info = linha.split(": Cluster ")
+                cluster = int(cluster_info)
+                clusters_real[cluster].append(palavra)
 
-        plt.title('Palavras Clusterizadas com DBSCAN e Distância de Levenshtein')
-        plt.xlabel('MDS 1')
-        plt.ylabel('MDS 2')
+        # Filtering cluster with three or more elements
+        clusters_filtrados_real = {c: p for c, p in clusters_real.items() if len(p) >= 3}
 
-        #Saving graph
-        plt.savefig(fileNamePrefix+'_cluster.pdf', format='pdf')
-        plt.close()
+        # Sorting clusters
+        clusters_filtrados_ordenados = dict(sorted(clusters_filtrados_real.items()))
 
+        fileNameClusterGreaterThree = f"{fileNamePrefix}_dbscan_clusterGreaterThree_eps_{str(eps)}_min_samples_{str(min_samples)}.txt"
+        outputFile = open(fileNameClusterGreaterThree, 'w')
+        for cluster in clusters_filtrados_ordenados:
+            #Discard the default cluster
+            if (cluster != -1):
+                print(clusters_filtrados_ordenados[cluster],file=outputFile)
+        outputFile.close()
 
     def calculate_similarities_for_batch(self, batch):
         batch_results = {}
@@ -298,11 +314,20 @@ class EvaluateSimilarity:
             word1, word2 = pair
             if not self.same_substance(word1, word2):
                 key = f"{word1}-{word2}"
-                #Similarity considering only the written word
-                similarityWritten = self.similarity_levenshtein(word1, word2)
-                #Similarity considering the phonetic using methaphone br
-                similarityPhonetic = self.similarity_levenshtein(phonetic(word1),phonetic(word2))
-                batch_results[key] = (float(similarityWritten) + float(similarityPhonetic))/float(2)
+                if (self.similarity == 'todas'):
+                    #Similarity considering only the written word
+                    similarityValue = self.similarity_levenshtein(word1, word2)
+                    #Similarity considering the phonetic using methaphone br
+                    similarityValue += self.similarity_levenshtein(phonetic(word1),phonetic(word2))
+                    similarityValue = float(similarityValue)/float(2)
+                elif (self.similarity == 'escrita'):
+                    similarityValue = self.similarity_levenshtein(word1, word2)
+                elif (self.similarity == 'fonetica'):
+                    similarityValue = self.similarity_levenshtein(phonetic(word1),phonetic(word2))
+                else:
+                    print("Erro inesperado")
+                    sys.exit(1)
+                batch_results[key] = similarityValue
         return batch_results
 
     def divide_into_batches(self, pairs, num_batches):
@@ -325,7 +350,7 @@ class EvaluateSimilarity:
                 self.similarities.update(batch_results)
 
 
-def main(mode):
+def main(mode,similarity):
     if (mode not in ['comercial','dcb','todos']):
         print("Modo invalido selecionado. Escolha  'comercial', 'dcb', ou 'todos'.")
         print("\nUsage:")
@@ -334,22 +359,30 @@ def main(mode):
         print("  todos: Comparando todos (comerciais e DCB)")
         sys.exit(1)
 
+    if (similarity not in ['escrita','fonetica','todas']):
+        print("Similaridade invalida selecionada. Escolha  'escrita', 'fonetica', ou 'todas'.")
+        print("\nUsage:")
+        print("  escrita: usa distancia de levenshtein na palavra escrita")
+        print("  fonetica: usa distancia de levenshtein na no resultado do metaphoneptbr")
+        print("  todas: usa a media arimetica entre escrita e fonetica")
+        sys.exit(1)
+
     #Defining the path to store results
     path = './output'
     if not os.path.exists(path):
         # O diretório não existe; criando-o
         os.makedirs(path)
 
-    fileNamePrefix = path + str("/") + mode
+    fileNamePrefix = path + str("/") + mode + "_" + similarity
 
     #Generating the word list based on the chosen mode
     print("Lendo o arquivo para gerar a lista de palavras")
-    word_list_generator = GenerateWordList(mode,'./listaMedicamentosTeste.xls')
+    word_list_generator = GenerateWordList(mode,'./listaMedicamentos.xls')
     word_list_generator.run()
 
     print("Calculando as similaridades")
     #Evaluating similarities
-    similarity_evaluator = EvaluateSimilarity(word_list_generator.words,word_list_generator.product_substance_map, word_list_generator.product_substance_original_map)
+    similarity_evaluator = EvaluateSimilarity(word_list_generator.words,word_list_generator.product_substance_map, word_list_generator.product_substance_original_map, similarity)
     #The run method will receive the number of processes to create
     #In this case we will use all the available cores
     similarity_evaluator.run(int(os.cpu_count()))
@@ -378,14 +411,15 @@ def main(mode):
     print("Salvando arquivo com histograma até distancia 2")
     similarity_evaluator.build_distance_graph(fileNamePrefix,2)
 
-    similarity_evaluator.cluster_and_plot_dbscan(fileNamePrefix)
+    similarity_evaluator.cluster_dbscan(fileNamePrefix)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Programa opera em um dos tres modos.')
     parser.add_argument('mode', help='Modo de operacao (comercial, dcb, todos)')
+    parser.add_argument('similarity', help='Forma de comparar palavras (escrita,fonetica,todas)')
 
     args = parser.parse_args()
 
-    main(args.mode)
+    main(args.mode,args.similarity)
 
     sys.exit(1)
