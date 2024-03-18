@@ -62,9 +62,13 @@ Contributions are always welcome. If you would like to contribute, please:
 4. Push to the branch (`git push origin feature/NewFeature`).
 5. Open a Pull Request.
 
+
 ## License
 
-This project is distributed under the MIT License. See the `LICENSE` file for more details.
+This project is licensed under the Creative Commons Attribution-NonCommercial 4.0 International License - see the [LICENSE](LICENSE) file for details. This means you are free to share and adapt the material as long as you follow the license terms, which include giving appropriate credit, providing a link to the license, and indicating if changes were made. You may do so in any reasonable manner, but not in any way that suggests the licensor endorses you or your use. You may not use the material for commercial purposes.
+
+For more information on this license, visit [https://creativecommons.org/licenses/by-nc/4.0/](https://creativecommons.org/licenses/by-nc/4.0/).
+
 
 ## Acknowledgments
 
