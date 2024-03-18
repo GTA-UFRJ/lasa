@@ -74,7 +74,3 @@ For more information on this license, visit [https://creativecommons.org/license
 
 - The development team thanks all the contributors and the community that contribute to the LASA Analysis Tool.
 - Special thanks to healthcare institutions and professionals who share insights and critical data for the project's evolution.
-
----
-
-This README.md provides a solid foundation that you can expand with specific details of your LASA Analysis Tool project, including unique features, screenshots, and more information on the tool's practical application.
